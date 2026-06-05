@@ -1,72 +1,79 @@
-pipeline{
-	agent any
-	environment{
-		DOCKER_IMAGE="nikhilchaudhari626/Devops"
-		DOCKER_TAG="latest"
-	}
-	tools{
-		jdk "Jdk17"
-		maven "Maven3"
-	}
-	
-	stages{
-		stage('Checkout Code'){
-			steps{
-				git branch :'main'
-				url :''
-			}
-		}
-		stage('Build'){
-			steps{
-				sh 'mvn clean package'
-			}
-		}
-		stage('Build Docker Image'){
-			steps{
-				sh 'docker build -t $DOCKER_IMAGE:$DOCKER_TAG .'
-			}
-		}
-		stage('Docker Push Image'){
-			stteps{
-				withCredentials([
-					usernamePassword
-					{
-						credentialId:'',
-						usernameVariable:'',
-						passwordVarable:''
-					}
-				]){
-					sh 'docker push $DOCKER_IMAGE:$DOCKER_TAG.'
-				}
-			}
-		}
-		stage('Run Docker Container') {
-    steps {
-        sh '''
-        docker stop springboot-app || true
-        docker rm springboot-app || true
+pipeline {
+    agent any
 
-        docker run -d \
-        --name springboot-app \
-        -p 8081:8080 \
-        nikhilchaudhari626/Devops:${BUILD_NUMBER}
-        '''
+    environment {
+        DOCKER_IMAGE = "nikhilchaudhari626/devops"
+        DOCKER_TAG = "${BUILD_NUMBER}"
     }
-		stage('Deploy To Kubernetes'){
-			steps{
-				sh '''
-				sed -i "s|DOCKER_TAG|$DOCKER_TAG|G"k8s/deployment.yml
-				kubectl apply k8s/
-				'''
-			}
-		}
-	}
-	post{
-		success{
-			echo 'Deployment Successful'
-		}
-		failure{
-			echo 'Deployment fail'
-		}]
-	}
+
+    tools {
+        jdk 'Jdk17'
+        maven 'Maven3'
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main',
+                url: 'https://github.com/nikhilchaudhari626/devops_jenkins_doker_kub.git'
+            }
+        }
+
+        stage('Build Maven Project') {
+            steps {
+                sh 'mvn clean package -DskipTests'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t $DOCKER_IMAGE:$DOCKER_TAG .'
+            }
+        }
+
+        stage('Docker Login & Push') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )
+                ]) {
+
+                    sh '''
+                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    docker push $DOCKER_IMAGE:$DOCKER_TAG
+                    '''
+                }
+            }
+        }
+
+        stage('Run Docker Container') {
+            steps {
+                sh '''
+                docker stop springboot-app || true
+                docker rm springboot-app || true
+
+                docker run -d \
+                --name springboot-app \
+                -p 8081:8080 \
+                $DOCKER_IMAGE:$DOCKER_TAG
+                '''
+            }
+        }
+
+        
+    }
+
+    post {
+        success {
+            echo 'Deployment Successful'
+        }
+
+        failure {
+            echo 'Deployment Failed'
+        }
+    }
 }
